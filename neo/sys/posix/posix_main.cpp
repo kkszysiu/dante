@@ -1118,6 +1118,13 @@ void Sys_GenerateEvents(void)
 low level output
 ===============
 */
+#ifdef ANDROID
+
+#include <android/log.h>
+
+#define vprintf(msg, argptr) __android_log_vprint(ANDROID_LOG_INFO, "Doom3", msg, argptr);
+
+#endif
 
 void Sys_DebugPrintf(const char *fmt, ...)
 {
