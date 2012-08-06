@@ -34,12 +34,18 @@ If you have questions concerning this license or the applicable additional terms
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef ANDROID
+
+#include <androidinstance.h>
+
+#endif
+
 idCVar sys_videoRam("sys_videoRam", "0", CVAR_SYSTEM | CVAR_ARCHIVE | CVAR_INTEGER, "Texture memory on the video card (in megabytes) - 0: autodetect", 0, 512);
 
-Display *dpy = NULL;
+//Display *dpy = NULL;
 static int scrnum = 0;
 
-Window win = 0;
+//Window win = 0;
 
 bool dga_found = false;
 
@@ -50,7 +56,7 @@ static GLXContext ctx = NULL;
 static bool vidmode_ext = false;
 static int vidmode_MajorVersion = 0, vidmode_MinorVersion = 0;	// major and minor of XF86VidExtensions
 
-static XF86VidModeModeInfo **vidmodes;
+//static XF86VidModeModeInfo **vidmodes;
 static int num_vidmodes;
 static bool vidmode_active = false;
 
@@ -118,16 +124,6 @@ void GLimp_SaveGamma()
 	if (save_rampsize) {
 		return;
 	}
-
-#if 0
-	assert(dpy);
-
-	XF86VidModeGetGammaRampSize(dpy, scrnum, &save_rampsize);
-	save_red = (unsigned short *)malloc(save_rampsize*sizeof(unsigned short));
-	save_green = (unsigned short *)malloc(save_rampsize*sizeof(unsigned short));
-	save_blue = (unsigned short *)malloc(save_rampsize*sizeof(unsigned short));
-	XF86VidModeGetGammaRamp(dpy, scrnum, save_rampsize, save_red, save_green, save_blue);
-#endif
 }
 
 /*
@@ -139,17 +135,6 @@ save and restore the original gamma of the system
 */
 void GLimp_RestoreGamma()
 {
-#if 0
-	if (!save_rampsize)
-		return;
-
-	XF86VidModeSetGammaRamp(dpy, scrnum, save_rampsize, save_red, save_green, save_blue);
-
-	free(save_red);
-	free(save_green);
-	free(save_blue);
-	save_rampsize = 0;
-#endif
 }
 
 /*
@@ -162,81 +147,28 @@ the size of the gamma ramp can not be changed on X (I need to confirm this)
 */
 void GLimp_SetGamma(unsigned short red[256], unsigned short green[256], unsigned short blue[256])
 {
-#if 0
-	if (dpy) {
-		int size;
-
-		GLimp_SaveGamma();
-		XF86VidModeGetGammaRampSize(dpy, scrnum, &size);
-		common->DPrintf("XF86VidModeGetGammaRampSize: %d\n", size);
-
-		if (size > 256) {
-			// silly generic resample
-			int i;
-			unsigned short *l_red, *l_green, *l_blue;
-			l_red = (unsigned short *)malloc(size*sizeof(unsigned short));
-			l_green = (unsigned short *)malloc(size*sizeof(unsigned short));
-			l_blue = (unsigned short *)malloc(size*sizeof(unsigned short));
-			//int r_size = 256;
-			int r_i;
-			float r_f;
-
-			for (i=0; i<size-1; i++) {
-				r_f = (float)i*255.0f/(float)(size-1);
-				r_i = (int)floor(r_f);
-				r_f -= (float)r_i;
-				l_red[i] = (int)round((1.0f-r_f)*(float)red[r_i]+r_f*(float)red[r_i+1]);
-				l_green[i] = (int)round((1.0f-r_f)*(float)green[r_i]+r_f*(float)green[r_i+1]);
-				l_blue[i] = (int)round((1.0f-r_f)*(float)blue[r_i]+r_f*(float)blue[r_i+1]);
-			}
-
-			l_red[size-1] = red[255];
-			l_green[size-1] = green[255];
-			l_blue[size-1] = blue[255];
-			XF86VidModeSetGammaRamp(dpy, scrnum, size, l_red, l_green, l_blue);
-			free(l_red);
-			free(l_green);
-			free(l_blue);
-		} else {
-			XF86VidModeSetGammaRamp(dpy, scrnum, size, red, green, blue);
-		}
-	}
-#endif
 }
 
 void GLimp_Shutdown()
 {
-	if (dpy) {
+    if (eglDisplay != EGL_NO_DISPLAY) {
+        GLimp_RestoreGamma();
+        eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
-		Sys_XUninstallGrabs();
+        if (eglContext != EGL_NO_CONTEXT) {
+            eglDestroyContext(eglDisplay, eglContext);
+        }
+        if (eglSurface != EGL_NO_SURFACE) {
+            eglDestroySurface(eglDisplay, eglSurface);
+        }
+        eglTerminate(eglDisplay);
+    }
 
-		GLimp_RestoreGamma();
+    vidmode_active = false;
 
-		eglDestroyContext(eglDisplay, eglContext);
-		eglDestroySurface(eglDisplay, eglSurface);
-		eglTerminate(eglDisplay);
-
-		XDestroyWindow(dpy, win);
-
-#if 0
-		if (vidmode_active) {
-			XF86VidModeSwitchToMode(dpy, scrnum, vidmodes[0]);
-		}
-#endif
-
-		XFlush(dpy);
-
-		// FIXME: that's going to crash
-		//XCloseDisplay( dpy );
-
-		vidmode_active = false;
-		dpy = NULL;
-		win = 0;
-
-		eglDisplay = EGL_NO_DISPLAY;
-		eglContext = EGL_NO_CONTEXT;
-		eglSurface = EGL_NO_SURFACE;
-	}
+    eglDisplay = EGL_NO_DISPLAY;
+    eglContext = EGL_NO_CONTEXT;
+    eglSurface = EGL_NO_SURFACE;
 }
 
 void GLimp_SwapBuffers()
@@ -251,6 +183,7 @@ Check for DGA	- update in_dgamouse if needed
 */
 void GLX_TestDGA()
 {
+    /*
 	int dga_MajorVersion = 0, dga_MinorVersion = 0;
 
 	assert(dpy);
@@ -271,57 +204,19 @@ void GLX_TestDGA()
 #else
 	dga_found = false;
 #endif
-}
-
-/*
-** XErrorHandler
-**   the default X error handler exits the application
-**   I found out that on some hosts some operations would raise X errors (GLXUnsupportedPrivateRequest)
-**   but those don't seem to be fatal .. so the default would be to just ignore them
-**   our implementation mimics the default handler behaviour (not completely cause I'm lazy)
-*/
-int idXErrorHandler(Display *l_dpy, XErrorEvent *ev)
-{
-	char buf[1024];
-	common->Printf("Fatal X Error:\n");
-	common->Printf("  Major opcode of failed request: %d\n", ev->request_code);
-	common->Printf("  Minor opcode of failed request: %d\n", ev->minor_code);
-	common->Printf("  Serial number of failed request: %lu\n", ev->serial);
-	XGetErrorText(l_dpy, ev->error_code, buf, 1024);
-	common->Printf("%s\n", buf);
-	return 0;
+    */
 }
 
 bool GLimp_OpenDisplay(void)
 {
-	if (dpy) {
-		return true;
-	}
-
 	if (cvarSystem->GetCVarInteger("net_serverDedicated") == 1) {
 		common->DPrintf("not opening the display: dedicated server\n");
 		return false;
 	}
 
-	common->Printf("Setup X display connection\n");
+	common->Printf("Setup Android SurfaceFlinger display connection\n");
 
-	// that should be the first call into X
-	if (!XInitThreads()) {
-		common->Printf("XInitThreads failed\n");
-		return false;
-	}
-
-	// set up our custom error handler for X failures
-	XSetErrorHandler(&idXErrorHandler);
-
-	if (!(dpy = XOpenDisplay(NULL))) {
-		common->Printf("Couldn't open the X display\n");
-		return false;
-	}
-
-	scrnum = DefaultScreen(dpy);
-
-	if (!(eglDisplay = eglGetDisplay((EGLNativeDisplayType) dpy))) {
+	if (!(eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY))) {
 		common->Printf("Couldn't open the EGL display\n");
 		return false;
 	}
@@ -363,16 +258,14 @@ int GLX_Init(glimpParms_t a)
 #define ATTR_DEPTH_IDX	9
 #define ATTR_STENCIL_IDX	11
 #define ATTR_BUFFER_SIZE_IDX	13
-	Window root;
-	XVisualInfo *visinfo;
-	XSetWindowAttributes attr;
-	XSizeHints sizehints;
+
 	unsigned long mask;
 	int colorbits, depthbits, stencilbits;
 	int tcolorbits, tdepthbits, tstencilbits;
 	int actualWidth, actualHeight;
 	int i;
 	const char *glstring;
+    EGLint format;
 
 	if (!GLimp_OpenDisplay()) {
 		return false;
@@ -380,72 +273,10 @@ int GLX_Init(glimpParms_t a)
 
 	common->Printf("Initializing OpenGL display\n");
 
-	root = RootWindow(dpy, scrnum);
+	//root = RootWindow(dpy, scrnum);
 
 	actualWidth = glConfig.vidWidth;
 	actualHeight = glConfig.vidHeight;
-
-#if 0
-	// Get video mode list
-	if (!XF86VidModeQueryVersion(dpy, &vidmode_MajorVersion, &vidmode_MinorVersion)) {
-		vidmode_ext = false;
-		common->Printf("XFree86-VidModeExtension not available\n");
-	} else {
-		vidmode_ext = true;
-		common->Printf("Using XFree86-VidModeExtension Version %d.%d\n",
-		               vidmode_MajorVersion, vidmode_MinorVersion);
-	}
-
-	GLX_TestDGA();
-
-	if (vidmode_ext) {
-		int best_fit, best_dist, dist, x, y;
-
-		XF86VidModeGetAllModeLines(dpy, scrnum, &num_vidmodes, &vidmodes);
-
-		// Are we going fullscreen?  If so, let's change video mode
-		if (a.fullScreen) {
-			best_dist = 9999999;
-			best_fit = -1;
-
-			for (i = 0; i < num_vidmodes; i++) {
-				if (a.width > vidmodes[i]->hdisplay ||
-				    a.height > vidmodes[i]->vdisplay)
-					continue;
-
-				x = a.width - vidmodes[i]->hdisplay;
-				y = a.height - vidmodes[i]->vdisplay;
-				dist = (x * x) + (y * y);
-
-				if (dist < best_dist) {
-					best_dist = dist;
-					best_fit = i;
-				}
-			}
-
-			if (best_fit != -1) {
-				actualWidth = vidmodes[best_fit]->hdisplay;
-				actualHeight = vidmodes[best_fit]->vdisplay;
-
-				// change to the mode
-				XF86VidModeSwitchToMode(dpy, scrnum, vidmodes[best_fit]);
-				vidmode_active = true;
-
-				// Move the viewport to top left
-				// FIXME: center?
-				XF86VidModeSetViewPort(dpy, scrnum, 0, 0);
-
-				common->Printf("Free86-VidModeExtension Activated at %dx%d\n", actualWidth, actualHeight);
-
-			} else {
-				a.fullScreen = false;
-				common->Printf("Free86-VidModeExtension: No acceptable modes found\n");
-			}
-		} else {
-			common->Printf("XFree86-VidModeExtension: not fullscreen, ignored\n");
-		}
-	}
-#endif
 
 	// color, depth and stencil
 	colorbits = 24;
@@ -540,13 +371,32 @@ int GLX_Init(glimpParms_t a)
 		break;
 	}
 
+    common->Printf("eglChooseConfig\n");
+
+    eglGetConfigAttrib(eglDisplay, eglConfig, EGL_NATIVE_VISUAL_ID, &format);
+
+    common->Printf("eglGetConfigAttrib\n");
+
+    if (!AndroidApp::getInstance().app) {
+        common->Printf("AndroidApp::getInstance().app is not defined?!\n");
+    }
+
+    if (!AndroidApp::getInstance().app->window) {
+        common->Printf("AndroidApp::getInstance().getApp()->window is not defined?!\n");
+    }
+
+    ANativeWindow_setBuffersGeometry(AndroidApp::getInstance().app->window, 0, 0, format);
+    common->Printf("ANativeWindow_setBuffersGeometry\n");
+
 	if (!eglNumConfig) {
 		common->Printf("No acceptable EGL configurations found!\n");
 		return false;
 	}
 
+    common->Printf("Are we alive still?\n");
+/*
 	visinfo = malloc(sizeof(XVisualInfo));
-	if (!(XMatchVisualInfo(dpy, scrnum, glConfig.depthBits, TrueColor, visinfo))) {
+    if (!(XMatchVisualInfo(dpy, scrnum, glConfig.depthBits, TrueColor, visinfo))) {
 		common->Printf("Couldn't get a visual\n");
 		return false;
 	}
@@ -556,26 +406,14 @@ int GLX_Init(glimpParms_t a)
 	attr.border_pixel = 0;
 	attr.colormap = XCreateColormap(dpy, root, visinfo->visual, AllocNone);
 	attr.event_mask = X_MASK;
-
-#if 0
-	if (vidmode_active) {
-		mask = CWBackPixel | CWColormap | CWSaveUnder | CWBackingStore |
-		       CWEventMask | CWOverrideRedirect;
-		attr.override_redirect = True;
-		attr.backing_store = NotUseful;
-		attr.save_under = False;
-	} else
-#endif
-	{
-		mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
-	}
-
+*/
 	/*
 	win = XCreateWindow(dpy, root, 0, 0,
 	                    actualWidth, actualHeight,
 	                    0, tdepthbits, InputOutput,
 	                    ClopyFromParent, mask, &attr);
 			    */
+/*
 	win = XCreateWindow(dpy, root, 0, 0,
 	                    actualWidth, actualHeight,
 	                    0, visinfo->depth, InputOutput,
@@ -592,26 +430,18 @@ int GLX_Init(glimpParms_t a)
 	XSetWMNormalHints(dpy, win, &sizehints);
 
 	XMapWindow(dpy, win);
-
-#if 0
-	if (vidmode_active) {
-		XMoveWindow(dpy, win, 0, 0);
-	}
-#endif
-
-#if 0
-	XFlush(dpy);
-	XSync(dpy, False);
-	ctx = glXCreateContext(dpy, visinfo, NULL, True);
-	XSync(dpy, False);
-
-	glXMakeCurrent(dpy, win, ctx);
-#endif
-
+*/
 	// Free the visinfo after we're done with it
-	XFree(visinfo);
+//	XFree(visinfo);
 
-	eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, win, NULL);
+
+    //surface = eglCreateWindowSurface(display, config, engine->app->window, NULL);
+    //context = eglCreateContext(display, config, NULL, NULL);
+    common->Printf("Hmm?\n");
+
+    eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, AndroidApp::getInstance().app->window, NULL);
+
+	//eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, NULL, NULL);
 	if (eglSurface == EGL_NO_SURFACE) {
 		common->Printf("Couldn't get a EGL surface\n");
 		return false;
@@ -628,13 +458,22 @@ int GLX_Init(glimpParms_t a)
 		return false;
 	}
 
-	eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
+	if (eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext) == EGL_FALSE) {
+        common->Printf("Unable to eglMakeCurrent\n");
+        return false;
+    }
+
+    common->Printf("Ok here?\n");
+    //eglQuerySurface(eglDisplay, eglSurface, EGL_WIDTH, &w);
+    //eglQuerySurface(eglDisplay, eglSurface, EGL_HEIGHT, &h);
 
 	glstring = (const char *) glGetString(GL_RENDERER);
 	common->Printf("GL_RENDERER: %s\n", glstring);
 
 	glstring = (const char *) glGetString(GL_EXTENSIONS);
 	common->Printf("GL_EXTENSIONS: %s\n", glstring);
+
+    common->Printf("Ok here? 2\n");
 
 	// FIXME: here, software GL test
 
@@ -643,6 +482,8 @@ int GLX_Init(glimpParms_t a)
 	if (glConfig.isFullscreen) {
 		Sys_GrabMouseCursor(true);
 	}
+
+    common->Printf("Ok here? 3\n");
 
 	return true;
 }
@@ -698,7 +539,7 @@ int Sys_GetVideoRam(void)
 {
 	static int run_once = 0;
 	int major, minor, value;
-	Display *l_dpy;
+	//Display *l_dpy;
 	int l_scrnum;
 
 	if (run_once) {
@@ -718,7 +559,7 @@ int Sys_GetVideoRam(void)
 		return run_once;
 	}
 
-	l_dpy = dpy;
+	//l_dpy = dpy;
 	l_scrnum = scrnum;
 
 	// try ATI /proc read ( for the lack of a better option )

@@ -117,7 +117,9 @@ void *Sys_AsyncThread(void *)
 		}
 
 		// thread exit
+#ifndef ANDROID
 		pthread_testcancel();
+#endif
 	}
 
 	return NULL;
@@ -626,3 +628,211 @@ int main(int argc, const char **argv)
 		common->Frame();
 	}
 }
+
+#ifdef ANDROID
+
+#include <jni.h>
+#include <errno.h>
+
+#include <EGL/egl.h>
+#include <GLES/gl.h>
+
+#include <androidinstance.h>
+
+#include <android/log.h>
+#include <android_native_app_glue.h>
+
+static int lmx = 0, lmy = 0;
+static int mx = 0, my = 0;
+
+static int32_t engine_handle_input(struct android_app* app, AInputEvent* event)
+{
+   if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION)
+   {
+        size_t pointerCount = AMotionEvent_getPointerCount(event);
+        unsigned int flags = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
+        if (flags == AMOTION_EVENT_ACTION_MOVE) {
+            for (size_t i = 0; i < pointerCount; ++i)
+            {
+                Sys_Printf("Received motion event from pointer %zu: (%.2f, %.2f)", i, AMotionEvent_getX(event, i), AMotionEvent_getY(event, i));
+                mx = (int)AMotionEvent_getX(event, i);
+                my = (int)AMotionEvent_getY(event, i);
+                int diffx = lmx - mx;
+                int diffy = lmy - my;
+
+                Posix_QueEvent(SE_MOUSE, diffx, diffy, 0, NULL);
+
+                // if we overflow here, we'll get a warning, but the delta will be completely processed anyway
+                Posix_AddMousePollEvent(M_DELTAX, diffx);
+
+                if (!Posix_AddMousePollEvent(M_DELTAY, diffy))
+                    return;
+                lmx = mx;
+                lmy = my;
+            }
+        } else if (flags == AMOTION_EVENT_ACTION_DOWN || flags == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+            Sys_Printf("Call mouse release event...");
+            // mouse release equivalent
+            int b = 0;
+            Posix_QueEvent(SE_KEY, K_MOUSE1 + b, false, 0, NULL);
+
+            if (!Posix_AddMousePollEvent(M_ACTION1 + b, false))
+                return;
+        } else if (flags == AMOTION_EVENT_ACTION_UP || flags == AMOTION_EVENT_ACTION_POINTER_UP) {
+            Sys_Printf("Call mouse press event...");
+            // mouse press equivalent
+            int b = 0;
+            Posix_QueEvent(SE_KEY, K_MOUSE1 + b, true, 0, NULL);
+
+            if (!Posix_AddMousePollEvent(M_ACTION1 + b, true))
+                return;
+        } else {
+            return 0;
+        }
+        return 1;
+   }
+   else if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY)
+   {
+      Sys_Printf("Received key event: %d", AKeyEvent_getKeyCode(event));
+      return 1;
+   }
+ 
+   return 0;
+}
+
+
+static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
+    //struct engine* engine = (struct engine*)app->userData;
+    //Sys_Printf("engine_handle_cmd %i\n", cmd);
+    switch (cmd) {
+        case APP_CMD_SAVE_STATE:
+            // The system has asked us to save our current state.  Do so.
+            //engine->app->savedState = malloc(sizeof(struct saved_state));
+            //*((struct saved_state*)engine->app->savedState) = engine->state;
+            //engine->app->savedStateSize = sizeof(struct saved_state);
+            break;
+        case APP_CMD_INIT_WINDOW:
+            // The window is being shown, get it ready.
+            if (app->window != NULL) {
+                //engine_init_display(engine);
+                //engine_draw_frame(engine);
+
+                Posix_EarlyInit();
+
+                // +devmap testmaps/test_box
+                //common->Init(0, NULL, NULL);
+                // FOR testing only... load test box map!
+                common->Init(0, NULL, "+devmap testmaps/test_box");
+                //common->Init(0, NULL, "+devmap game/mp/d3dm1");
+
+                Posix_LateInit();
+
+                AndroidApp::getInstance().windowCreated = true;
+            }
+            break;
+        case APP_CMD_TERM_WINDOW:
+            Sys_Printf("APP_CMD_TERM_WINDOW...");
+            /*
+            if (common) {
+                common->Shutdown();
+                common->Quit();
+            }
+            */
+            Sys_Shutdown();
+            Sys_Quit();
+            break;
+        case APP_CMD_GAINED_FOCUS:
+            break;
+        case APP_CMD_LOST_FOCUS:
+            Sys_Printf("APP_CMD_LOST_FOCUS...");
+            //if (common) {
+            //    common->Quit();
+            //}
+            //Sys_Shutdown();
+            break;
+    }
+}
+
+void android_main(struct android_app* state) {
+    // Make sure glue isn't stripped.
+    app_dummy();
+
+#ifdef ID_MCHECK
+    // must have -lmcheck linkage
+    mcheck(abrt_func);
+    Sys_Printf("memory consistency checking enabled\n");
+#endif
+
+    state->userData = &AndroidApp::getInstance();
+    state->onAppCmd = engine_handle_cmd;
+    state->onInputEvent = engine_handle_input;
+
+    AndroidApp::getInstance().app = state;
+    AndroidApp::getInstance().windowCreated = false;
+
+    // Prepare to monitor accelerometer
+//    engine.sensorManager = ASensorManager_getInstance();
+//    engine.accelerometerSensor = ASensorManager_getDefaultSensor(engine.sensorManager,
+//            ASENSOR_TYPE_ACCELEROMETER);
+//    engine.sensorEventQueue = ASensorManager_createEventQueue(engine.sensorManager,
+//            state->looper, LOOPER_ID_USER, NULL, NULL);
+
+//     if (state->savedState != NULL) {
+//         // We are starting with a previous saved state; restore from it.
+//         android_engine.state = *(struct saved_state*)state->savedState;
+//     }
+
+    // loop waiting for stuff to do.
+
+    while (1) {
+        // Read all pending events.
+        int ident;
+        int events;
+        struct android_poll_source* source;
+
+        // If not animating, we will block forever waiting for events.
+        // If animating, we loop until all events are read, then continue
+        // to draw the next frame of animation.
+        // android_engine.animating ? 0 : -1
+        while ((ident=ALooper_pollAll(0, NULL, &events,
+                (void**)&source)) >= 0) {
+
+            // Process this event.
+            if (source != NULL) {
+                source->process(state, source);
+            }
+
+//            // If a sensor has data, process it now.
+//            if (ident == LOOPER_ID_USER) {
+//                if (engine.accelerometerSensor != NULL) {
+//                    ASensorEvent event;
+//                    while (ASensorEventQueue_getEvents(engine.sensorEventQueue,
+//                            &event, 1) > 0) {
+//                        LOGI("accelerometer: x=%f y=%f z=%f",
+//                                event.acceleration.x, event.acceleration.y,
+//                                event.acceleration.z);
+//                    }
+//                }
+//            }
+
+            // Check if we are exiting.
+            if (state->destroyRequested != 0) {
+                /*
+                if (common) {
+                    common->Shutdown();
+                    common->Quit();
+                }
+                */
+                Sys_Shutdown();
+                Sys_Quit();
+                return;
+            }
+        }
+
+        if (AndroidApp::getInstance().windowCreated) {
+            common->Frame();
+        }
+    }
+}
+
+#endif
