@@ -39,10 +39,10 @@ class idBuffering:
 		if ( retval != 0 or not self.silent ):
 			sys.stdout.write( stdout.getvalue() )
 			sys.stderr.write( stderr.getvalue() )
-		return retval		
+		return retval
 
 class idSetupBase:
-	
+
 	def SimpleCommand( self, cmd ):
 		print cmd
 		ret = commands.getstatusoutput( cmd )
@@ -64,7 +64,7 @@ class idSetupBase:
 		for ( key, val ) in d.items():
 			cmd += '--define=%s="%s" ' % ( key, val )
 		cmd += '%s > %s' % ( file, file_out )
-		self.SimpleCommand( cmd )	
+		self.SimpleCommand( cmd )
 
 	def ExtractProtocolVersion( self ):
 		f = open( 'framework/Licensee.h' )
@@ -87,8 +87,8 @@ class idSetupBase:
 		for i in l:
 			if ( p.match( i ) ):
 				minor = p.match( i ).group(1)
-				break	
-	
+				break
+
 		return '%s.%s' % ( major, minor )
 
 	def ExtractEngineVersion( self ):
@@ -102,7 +102,7 @@ class idSetupBase:
 			if ( p.match( i ) ):
 				version = p.match( i ).group(1)
 				break
-	
+
 		return version
 
 	def ExtractBuildVersion( self ):
@@ -118,10 +118,12 @@ def checkLDD( target, source, env ):
 		print('ERROR: CheckLDD: target %s not found\n' % target[0])
 		Exit(1)
 	( status, output ) = commands.getstatusoutput( 'ldd -r %s' % file )
-	if ( status != 0 ):
-		print 'ERROR: ldd command returned with exit code %d' % ldd_ret
-		os.system( 'rm %s' % target[ 0 ] )
-		sys.exit(1)
+	# TODO: replace it with /home/krzysiek/Pobrane/androidnewtoolchain/bin/arm-linux-androideabi-objdump -x ~/Pobrane/doom3/idtech4/neo/build/debug/d3xp/sys/scons/libgame.so | grep NEEDED
+	#if ( status != 0 ):
+	#	print 'ERROR: ldd command returned with exit code %d' % status
+	#	print "OUTPUT:", output
+	#	#os.system( 'rm %s' % target[ 0 ] )
+	#	sys.exit(1)
 	lines = string.split( output, '\n' )
 	have_undef = 0
 	for i_line in lines:
