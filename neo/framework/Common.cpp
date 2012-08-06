@@ -2827,6 +2827,7 @@ void idCommonLocal::LoadGameDLL(void)
 	gameExport_t	gameExport;
 	GetGameAPI_t	GetGameAPI;
 
+#ifndef ANDROID
 	fileSystem->FindDLL("game", dllPath, true);
 
 	if (!dllPath[ 0 ]) {
@@ -2836,6 +2837,9 @@ void idCommonLocal::LoadGameDLL(void)
 
 	common->DPrintf("Loading game DLL: '%s'\n", dllPath);
 	gameDLL = sys->DLL_Load(dllPath);
+#else
+    gameDLL = sys->DLL_Load("/data/data/com.kkszysiu.doom3/lib/libgame-base.so");
+#endif
 
 	if (!gameDLL) {
 		common->FatalError("couldn't load game dynamic library");
