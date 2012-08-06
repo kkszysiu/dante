@@ -28,7 +28,7 @@ scons: done building targets.
 
 It means that propably you're lucky enough and everything went successfuly :)
 
-Assuming youre still in 'dante/android/' directory, you need to did it this way:
+You need to download Android platform-10 SDK and platform-tools package now. Assuming youre still in 'dante/android/' directory, let's make:
 
 ./android-sdk-linux/tools/android
 
@@ -37,7 +37,7 @@ New window should shows up. Then you need to install couple of things from it...
     Tools/Android SDK Platform-tools
     Android 2.3.3 (API 10)/SDK Platform
 
-If you installed it then you can close this window and back to your terminal again.
+If you alreadt installed it, you can close this window and back to your terminal again.
 
 Now connect your device through USB cable to your PC and let the magic happpen...
 
