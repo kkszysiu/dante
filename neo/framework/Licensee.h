@@ -104,6 +104,11 @@ If you have questions concerning this license or the applicable additional terms
 #define LINUX_DEFAULT_PATH			"/usr/local/games/doom3"
 #endif
 
+#ifdef ANDROID
+#undef LINUX_DEFAULT_PATH
+#define LINUX_DEFAULT_PATH          "/sdcard/Android/data/com.kkszysiu.doom3/"
+#endif
+
 // CD Key file info
 // goes into BASE_GAMEDIR whatever the fs_game is set to
 // two distinct files for easier win32 installer job
