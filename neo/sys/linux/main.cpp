@@ -639,11 +639,16 @@ int main(int argc, const char **argv)
 
 #include <androidinstance.h>
 
+#include <android/sensor.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
 
 static int lmx = 0, lmy = 0;
 static int mx = 0, my = 0;
+
+static ASensorManager* sensorManager;
+static const ASensor* accelerometerSensor;
+static ASensorEventQueue* sensorEventQueue;
 
 static int32_t engine_handle_input(struct android_app* app, AInputEvent* event)
 {
@@ -742,9 +747,23 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
             Sys_Quit();
             break;
         case APP_CMD_GAINED_FOCUS:
+            // When our app gains focus, we start monitoring the accelerometer.
+            if (accelerometerSensor != NULL) {
+                ASensorEventQueue_enableSensor(sensorEventQueue,
+                        accelerometerSensor);
+                // We'd like to get 60 events per second (in us).
+                ASensorEventQueue_setEventRate(sensorEventQueue,
+                        accelerometerSensor, (1000L/60)*1000);
+            }
             break;
         case APP_CMD_LOST_FOCUS:
             Sys_Printf("APP_CMD_LOST_FOCUS...");
+            // When our app loses focus, we stop monitoring the accelerometer.
+            // This is to avoid consuming battery while not being used.
+            if (accelerometerSensor != NULL) {
+                ASensorEventQueue_disableSensor(sensorEventQueue,
+                        accelerometerSensor);
+            }
             //if (common) {
             //    common->Quit();
             //}
@@ -771,11 +790,11 @@ void android_main(struct android_app* state) {
     AndroidApp::getInstance().windowCreated = false;
 
     // Prepare to monitor accelerometer
-//    engine.sensorManager = ASensorManager_getInstance();
-//    engine.accelerometerSensor = ASensorManager_getDefaultSensor(engine.sensorManager,
-//            ASENSOR_TYPE_ACCELEROMETER);
-//    engine.sensorEventQueue = ASensorManager_createEventQueue(engine.sensorManager,
-//            state->looper, LOOPER_ID_USER, NULL, NULL);
+    sensorManager = ASensorManager_getInstance();
+    accelerometerSensor = ASensorManager_getDefaultSensor(sensorManager,
+            ASENSOR_TYPE_ACCELEROMETER);
+    sensorEventQueue = ASensorManager_createEventQueue(sensorManager,
+            state->looper, LOOPER_ID_USER, NULL, NULL);
 
 //     if (state->savedState != NULL) {
 //         // We are starting with a previous saved state; restore from it.
@@ -802,19 +821,18 @@ void android_main(struct android_app* state) {
                 source->process(state, source);
             }
 
-//            // If a sensor has data, process it now.
-//            if (ident == LOOPER_ID_USER) {
-//                if (engine.accelerometerSensor != NULL) {
-//                    ASensorEvent event;
-//                    while (ASensorEventQueue_getEvents(engine.sensorEventQueue,
-//                            &event, 1) > 0) {
-//                        LOGI("accelerometer: x=%f y=%f z=%f",
-//                                event.acceleration.x, event.acceleration.y,
-//                                event.acceleration.z);
-//                    }
-//                }
-//            }
-
+            // If a sensor has data, process it now.
+            if (ident == LOOPER_ID_USER) {
+                if (accelerometerSensor != NULL) {
+                    ASensorEvent event;
+                    while (ASensorEventQueue_getEvents(sensorEventQueue,
+                            &event, 1) > 0) {
+                        Sys_Printf("accelerometer: x=%f y=%f z=%f",
+                                event.acceleration.x, event.acceleration.y,
+                                event.acceleration.z);
+                    }
+                }
+            }
             // Check if we are exiting.
             if (state->destroyRequested != 0) {
                 /*
