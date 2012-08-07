@@ -6,8 +6,8 @@ PROJECT_PATH="doom3_android_project"
 mkdir -p ./$PROJECT_PATH/libs/armeabi/
 
 #cp ../neo/android/libjpeg/libs/armeabi/libjpeg.so ./$PROJECT_PATH/libs/armeabi/
-cp ../neo/doom.x86_64 ./$PROJECT_PATH/libs/armeabi/libdoom3.so
-cp ../neo/gamex86_64-base.so ./$PROJECT_PATH/libs/armeabi/libgame-base.so
+cp ../neo/doom.arm ./$PROJECT_PATH/libs/armeabi/libdoom3.so
+cp ../neo/gamearm-base.so ./$PROJECT_PATH/libs/armeabi/libgame-base.so
 
 cd ./doom3_android_project/
 ant debug
