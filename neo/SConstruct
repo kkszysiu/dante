@@ -151,6 +151,12 @@ else:
 		cpu = 'ppc'
 g_os = 'Linux'
 
+if ARGUMENTS.has_key( 'system' ):
+    g_os = ARGUMENTS['system']
+
+if ARGUMENTS.has_key( 'arch' ):
+    cpu = ARGUMENTS['arch']
+
 # end system detection ---------------------------
 
 # default settings -------------------------------
@@ -330,13 +336,12 @@ if ( ID_MCHECK == '1' ):
 
 # create the build environements
 
-for opt in ( os.environ, CC, CXX, LINK, BASECPPFLAGS, BASELINKFLAGS, CORECPPPATH, CORELIBPATH ):
-    print "opt:", opt
-
-print "BASECPPFLAGS", BASECPPFLAGS
+#for opt in ( os.environ, CC, CXX, LINK, BASECPPFLAGS, BASELINKFLAGS, CORECPPPATH, CORELIBPATH ):
+#    print "opt:", opt
+#print "BASECPPFLAGS", BASECPPFLAGS
 
 # TODO: hack, hack, hack!
-BASECPPFLAGS.append("-Iandroid/libjpeg/include/")
+#BASECPPFLAGS.append("-Iandroid/libjpeg/include/")
 #BASECPPFLAGS.append("-frtti")
 
 g_base_env = Environment( ENV = os.environ, CC = CC, CXX = CXX, LINK = LINK, CPPFLAGS = BASECPPFLAGS, LINKFLAGS = BASELINKFLAGS, CPPPATH = CORECPPPATH, LIBPATH = CORELIBPATH )
