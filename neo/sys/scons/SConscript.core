@@ -308,10 +308,10 @@ if ( local_dedicated == 0 ):
         local_env.Append( LIBS = [ 'X11' ] )
         local_env.Append( LIBPATH = [ '/usr/X11R6/lib' ] )
         local_env.Append( LIBS = [ 'openal' ] )
-	if ( local_opengl == 0 ):
-		local_env.Append( LIBS = [ 'GLESv2', 'EGL' ] )
-	else:
-		local_env.Append( LIBS = [ 'GL' ] )
+    if ( local_opengl == 0 ):
+            local_env.Append( LIBS = [ 'GLESv2', 'EGL' ] )
+    else:
+            local_env.Append( LIBS = [ 'GL' ] )
 
 source_list = core_list
 source_list += idlib_objects
