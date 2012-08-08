@@ -38,7 +38,11 @@ typedef struct poll_mouse_event_s {
 	int value;
 } poll_mouse_event_t;
 
+#if ANDROID
+#define MAX_POLL_EVENTS 50000 // temporary stuff to not reach MAX POOL EVENTS limit...
+#else
 #define MAX_POLL_EVENTS 50
+#endif
 #define POLL_EVENTS_HEADROOM 2 // some situations require to add several events
 static poll_keyboard_event_t poll_events_keyboard[MAX_POLL_EVENTS + POLL_EVENTS_HEADROOM];
 static int poll_keyboard_event_count;
