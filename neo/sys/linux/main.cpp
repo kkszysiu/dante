@@ -291,7 +291,22 @@ double Sys_GetClockTicks(void)
 	        "pop %%ebx\n"
 	        : "=r"(lo), "=r"(hi));
 	return (double) lo + (double) 0xFFFFFFFF * hi;
+/*
+#elif ANDROID
+    unsigned long lo, hi;
+
+    __asm__ __volatile__(
+            "push %%ebx\n"			\
+            "xor %%eax,%%eax\n"		\
+            "cpuid\n"					\
+            "rdtsc\n"					\
+            "mov %%eax,%0\n"			\
+            "mov %%edx,%1\n"			\
+            "pop %%ebx\n"
+            : "=r"(lo), "=r"(hi));
+    return (double) lo + (double) 0xFFFFFFFF * hi;
 #else
+*/
 #warning unsupported CPU
 	return 0;
 #endif
@@ -727,7 +742,7 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
                 // +devmap testmaps/test_box
                 //common->Init(0, NULL, NULL);
                 // FOR testing only... load test box map!
-                common->Init(0, NULL, "+devmap testmaps/test_box");
+                common->Init(0, NULL, "+devmap testmaps/test_box +com_showFPS 1");
                 //common->Init(0, NULL, "+devmap game/mp/d3dm1");
 
                 Posix_LateInit();
@@ -827,9 +842,47 @@ void android_main(struct android_app* state) {
                     ASensorEvent event;
                     while (ASensorEventQueue_getEvents(sensorEventQueue,
                             &event, 1) > 0) {
-                        Sys_Printf("accelerometer: x=%f y=%f z=%f",
-                                event.acceleration.x, event.acceleration.y,
-                                event.acceleration.z);
+                        //Sys_Printf("accelerometer: x=%f y=%f z=%f",
+                        //        event.acceleration.x, event.acceleration.y,
+                        //        event.acceleration.z);
+                        // TODO: move it to another function...
+                        if (event.acceleration.x < -2) {
+                            // stopping 115 - moving back...
+                            Posix_QueEvent(SE_KEY, 115, false, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(115, false))
+                                return;
+
+                            // 119 moving forward...
+                            Posix_QueEvent(SE_KEY, 119, true, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(119, true))
+                                return;
+                        } else if (event.acceleration.x < 2) {
+                            // stopping 119 - moving forward...
+                            Posix_QueEvent(SE_KEY, 119, false, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(119, false))
+                                return;
+
+                            // 115 - moving back
+                            Posix_QueEvent(SE_KEY, 115, true, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(115, true))
+                                return;
+                        } else {
+                            // stopping 119 - moving forward...
+                            Posix_QueEvent(SE_KEY, 119, false, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(119, false))
+                                return;
+
+                            // stopping 115 - moving back...
+                            Posix_QueEvent(SE_KEY, 115, false, 0, NULL);
+
+                            if (!Posix_AddKeyboardPollEvent(115, false))
+                                return;
+                        }
                     }
                 }
             }
