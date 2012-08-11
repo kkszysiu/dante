@@ -85,7 +85,7 @@ public:
         GLimp_AndroidInit(win);
         Posix_EarlyInit();
         common->Init(0, NULL, debug ?
-                "+devmap testmaps/test_box +com_showFPS 1" : NULL);
+                "+devmap testmaps/test_box +com_showFPS 1 +fs_debug 1" : NULL);
         Posix_LateInit();
     }
 
@@ -136,7 +136,7 @@ void Sys_InitScanTable(void)
 Sys_AsyncThread
 =================
 */
-void *Sys_AsyncThread(void *)
+void *Sys_AsyncThread(void *p)
 {
 	int now;
 	int next;
@@ -146,6 +146,11 @@ void *Sys_AsyncThread(void *)
 	int ticked, to_ticked;
 	now = Sys_Milliseconds();
 	ticked = now >> 4;
+
+    #ifdef __ANDROID__
+        xthreadInfo* threadInfo = static_cast<xthreadInfo*> (p);
+        assert(threadInfo);
+    #endif
 
 	while (1) {
 		// sleep
@@ -161,32 +166,6 @@ void *Sys_AsyncThread(void *)
 		now = Sys_Milliseconds();
 		to_ticked = now >> 4;
 
-		// show ticking statistics - every 100 ticks, print a summary
-#if 0
-#define STAT_BUF 100
-		static int stats[STAT_BUF];
-		static int counter = 0;
-		// how many ticks to play
-		stats[counter] = to_ticked - ticked;
-		counter++;
-
-		if (counter == STAT_BUF) {
-			Sys_DebugPrintf("\n");
-
-			for (int i = 0; i < STAT_BUF; i++) {
-				if (!(i & 0xf)) {
-					Sys_DebugPrintf("\n");
-				}
-
-				Sys_DebugPrintf("%d ", stats[i]);
-			}
-
-			Sys_DebugPrintf("\n");
-			counter = 0;
-		}
-
-#endif
-
 		while (ticked < to_ticked) {
 			common->Async();
 			ticked++;
@@ -194,7 +173,11 @@ void *Sys_AsyncThread(void *)
 		}
 
 		// thread exit
-#ifndef ANDROID
+#ifdef __ANDROID__ 
+    if (threadInfo->exitRequested) {
+        break;
+    }
+#else
 		pthread_testcancel();
 #endif
 	}
@@ -223,6 +206,7 @@ Sys_EXEPath
 */
 const char *Sys_EXEPath(void)
 {
+	
 	static char	buf[ 1024 ];
 	idStr		linkpath;
 	int			len;
