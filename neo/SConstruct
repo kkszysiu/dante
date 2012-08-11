@@ -152,10 +152,10 @@ else:
 g_os = 'Linux'
 
 if ARGUMENTS.has_key( 'system' ):
-    g_os = ARGUMENTS['system']
+	g_os = ARGUMENTS['system']
 
 if ARGUMENTS.has_key( 'arch' ):
-    cpu = ARGUMENTS['arch']
+	cpu = ARGUMENTS['arch']
 
 # end system detection ---------------------------
 
@@ -297,6 +297,8 @@ if ( g_os == 'Linux' ):
 
 if ( g_os == 'Android' ):
     BASECPPFLAGS.append( '-Wno-psabi' )
+    BASECPPFLAGS.append( '-DANDROID' )
+    BASECPPFLAGS.append( '-D__ANDROID__')
 
 if ( g_sdk or SDK != '0' ):
 	BASECPPFLAGS.append( '-D_D3SDK' )

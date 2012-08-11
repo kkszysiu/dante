@@ -21,7 +21,7 @@ export RANLIB=$ABI_BIN/arm-linux-androideabi-ranlib
 export AR=$ABI_BIN/arm-linux-androideabi-ar
 export LD=$ABI_BIN/arm-linux-androideabi-ld
 
-CPPFLAGS="-DANDROID"
+CPPFLAGS=""
 
 #TOP=$TOP CC=$CC CXX=$CXX RANLIB=$RANLIB AR=$AR scons os=android arch=arm $@
 #CC=$CC CXX=$CXX RANLIB=$RANLIB AR=$AR scons os=android arch=arm $@
