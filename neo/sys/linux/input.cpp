@@ -94,8 +94,7 @@ void Sys_InitInput(void)
 	bool ret;
 
 	common->Printf("\n------- Input Initialization -------\n");
-    /*
-	//assert(dpy);
+	assert(dpy);
 	cmdSystem->AddCommand("in_clear", IN_Clear_f, CMD_FL_SYSTEM, "reset the input keys");
 	major_in_out = XkbMajorVersion;
 	minor_in_out = XkbMinorVersion;
@@ -115,14 +114,13 @@ void Sys_InitInput(void)
 	} else {
 		have_xkb = false;
 	}
-    */
+
 	common->Printf("------------------------------------\n");
 }
 
 //#define XEVT_DBG
 //#define XEVT_DBG2
 
-#if 0
 static Cursor Sys_XCreateNullCursor(Display *display, Window root)
 {
 	Pixmap cursormask;
@@ -144,11 +142,9 @@ static Cursor Sys_XCreateNullCursor(Display *display, Window root)
 	XFreeGC(display,gc);
 	return cursor;
 }
-#endif
 
 static void Sys_XInstallGrabs(void)
 {
-    /*
 	assert(dpy);
 
 	XWarpPointer(dpy, None, win,
@@ -200,12 +196,10 @@ static void Sys_XInstallGrabs(void)
 	XSync(dpy, False);
 
 	mouse_active = true;
-    */
 }
 
 void Sys_XUninstallGrabs(void)
 {
-    /*
 	assert(dpy);
 
 #if defined( ID_ENABLE_DGA )
@@ -230,12 +224,11 @@ void Sys_XUninstallGrabs(void)
 	XUndefineCursor(dpy, win);
 
 	mouse_active = false;
-    */
 }
 
 void Sys_GrabMouseCursor(bool grabIt)
 {
-/*
+
 #if defined( ID_DEDICATED )
 	return;
 #endif
@@ -278,7 +271,6 @@ void Sys_GrabMouseCursor(bool grabIt)
 	} else if (!grabIt && mouse_active) {
 		Sys_XUninstallGrabs();
 	}
-*/
 }
 
 /**
@@ -295,7 +287,6 @@ void Sys_GrabMouseCursor(bool grabIt)
  */
 static bool Sys_XPendingInput(void)
 {
-    /*
 	// Flush the display connection
 	//  and look to see if events are queued
 	XFlush(dpy);
@@ -316,7 +307,6 @@ static bool Sys_XPendingInput(void)
 	if (select(x11_fd+1, &fdset, NULL, NULL, &zero_time) == 1) {
 		return XPending(dpy);
 	}
-	*/
 
 	// Oh well, nothing is ready ..
 	return false;
@@ -325,7 +315,6 @@ static bool Sys_XPendingInput(void)
 /**
  * Intercept a KeyRelease-KeyPress sequence and ignore
  */
-/*
 static bool Sys_XRepeatPress(XEvent *event)
 {
 	XEvent	peekevent;
@@ -358,7 +347,6 @@ static bool Sys_XRepeatPress(XEvent *event)
 
 	return repeated;
 }
-*/
 
 /*
 ==========================
@@ -367,7 +355,6 @@ Posix_PollInput
 */
 void Posix_PollInput()
 {
-    /*
 	static char buf[16];
 	static XEvent event;
 	static XKeyEvent *key_event = (XKeyEvent *)&event;
@@ -565,7 +552,6 @@ void Posix_PollInput()
 				break;
 		}
 	}
-	*/
 }
 
 /*
@@ -582,8 +568,6 @@ Sys_MapCharForKey
 */
 unsigned char Sys_MapCharForKey(int _key)
 {
-        char        buf[5];
-/*
 	int			key;	// scan key ( != doom key )
 	XkbStateRec kbd_state;
 	XEvent		event;
@@ -630,7 +614,6 @@ unsigned char Sys_MapCharForKey(int _key)
 		// only ever expecting 1 char..
 		Sys_Printf("Sys_MapCharForKey: XLookupString returned '%s'\n", buf);
 	}
-*/
 
 	return buf[ 0 ];
 }

@@ -3,8 +3,6 @@
 
 Doom 3 GPL Source Code
 Copyright (C) 1999-2011 id Software LLC, a ZeniMax Media company.
-Copyright (C) 2012 Krzysztof Klinikowski <kkszysiu@gmail.com>
-Copyright (C) 2012 Havlena Petr <havlenapetr@gmail.com>
 
 This file is part of the Doom 3 GPL Source Code (?Doom 3 Source Code?).
 
@@ -39,87 +37,12 @@ If you have questions concerning this license or the applicable additional terms
 #include <sys/types.h>
 #include <fcntl.h>
 
-#include <android/sensor.h>
-#include <android_native_app_glue.h>
-
 #ifdef ID_MCHECK
 #include <mcheck.h>
 #endif
 
 static idStr	basepath;
 static idStr	savepath;
-
-extern void GLimp_AndroidInit(ANativeWindow* win);
-extern void GLimp_AndroidQuit();
-
-extern void Posix_EarlyInit();
-extern void Posix_LateInit();
-extern bool Posix_AddMousePollEvent(int action, int value);
-extern void Posix_QueEvent(sysEventType_t type, int value, int value2,
-                    int ptrLength, void *ptr);
-
-class idAndroidEngine {
-public:
-    idAndroidEngine()
-        : mRunning(false),
-          mExiting(false),
-          mLastMotionX(0),
-          mLastMotionY(0) {
-    }
-
-    void pause() {
-        mRunning = false;
-    }
-
-    void resume() {
-        mRunning = true;
-    }
-
-    void render() {
-        if(isRunning()) {
-            common->Frame();
-        }
-    }
-
-    void start(ANativeWindow* win, bool debug = false) {
-        GLimp_AndroidInit(win);
-        Posix_EarlyInit();
-        common->Init(0, NULL, debug ?
-                "+devmap testmaps/test_box +com_showFPS 1 +fs_debug 1" : NULL);
-        Posix_LateInit();
-    }
-
-    void stop() {
-        GLimp_AndroidQuit();
-        common->Quit();
-        mExiting = true;
-    }
-
-    bool isRunning() {
-        return mRunning && common->IsInitialized();
-    }
-
-    bool isExiting() {
-        return mExiting;
-    }
-
-    void setLastMotionPos(int32_t x, int32_t y) {
-        mLastMotionX = x;
-        mLastMotionY = y;
-    }
-
-    void getLastMotionPos(int32_t* x, int32_t* y) {
-        *x = mLastMotionX;
-        *y = mLastMotionY;
-    }
-
-private:
-    bool mRunning;
-    bool mExiting;
-    int32_t mLastMotionX;
-    int32_t mLastMotionY;
-};
-
 
 /*
 ===========
@@ -136,7 +59,7 @@ void Sys_InitScanTable(void)
 Sys_AsyncThread
 =================
 */
-void *Sys_AsyncThread(void *p)
+void *Sys_AsyncThread(void *)
 {
 	int now;
 	int next;
@@ -146,11 +69,6 @@ void *Sys_AsyncThread(void *p)
 	int ticked, to_ticked;
 	now = Sys_Milliseconds();
 	ticked = now >> 4;
-
-    #ifdef __ANDROID__
-        xthreadInfo* threadInfo = static_cast<xthreadInfo*> (p);
-        assert(threadInfo);
-    #endif
 
 	while (1) {
 		// sleep
@@ -166,6 +84,32 @@ void *Sys_AsyncThread(void *p)
 		now = Sys_Milliseconds();
 		to_ticked = now >> 4;
 
+		// show ticking statistics - every 100 ticks, print a summary
+#if 0
+#define STAT_BUF 100
+		static int stats[STAT_BUF];
+		static int counter = 0;
+		// how many ticks to play
+		stats[counter] = to_ticked - ticked;
+		counter++;
+
+		if (counter == STAT_BUF) {
+			Sys_DebugPrintf("\n");
+
+			for (int i = 0; i < STAT_BUF; i++) {
+				if (!(i & 0xf)) {
+					Sys_DebugPrintf("\n");
+				}
+
+				Sys_DebugPrintf("%d ", stats[i]);
+			}
+
+			Sys_DebugPrintf("\n");
+			counter = 0;
+		}
+
+#endif
+
 		while (ticked < to_ticked) {
 			common->Async();
 			ticked++;
@@ -173,13 +117,7 @@ void *Sys_AsyncThread(void *p)
 		}
 
 		// thread exit
-#ifdef __ANDROID__ 
-    if (threadInfo->exitRequested) {
-        break;
-    }
-#else
 		pthread_testcancel();
-#endif
 	}
 
 	return NULL;
@@ -193,9 +131,9 @@ void *Sys_AsyncThread(void *p)
 const char *Sys_DefaultSavePath(void)
 {
 #if defined( ID_DEMO_BUILD )
-	sprintf(savepath, "/sdcard/Android/data/com.kkszysiu.doom3/.doom3-demo");
+	sprintf(savepath, "%s/.doom3-demo", getenv("HOME"));
 #else
-	sprintf(savepath, "/sdcard/Android/data/com.kkszysiu.doom3/");
+	sprintf(savepath, "%s/.doom3", getenv("HOME"));
 #endif
 	return savepath.c_str();
 }
@@ -206,7 +144,6 @@ Sys_EXEPath
 */
 const char *Sys_EXEPath(void)
 {
-	
 	static char	buf[ 1024 ];
 	idStr		linkpath;
 	int			len;
@@ -236,7 +173,38 @@ Try to be intelligent: if there is no BASE_GAMEDIR, try the next path
 */
 const char *Sys_DefaultBasePath(void)
 {
-	return ANDROID_DEFAULT_PATH;
+	struct stat st;
+	idStr testbase;
+	basepath = Sys_EXEPath();
+
+	if (basepath.Length()) {
+		basepath.StripFilename();
+		testbase = basepath;
+		testbase += "/";
+		testbase += BASE_GAMEDIR;
+
+		if (stat(testbase.c_str(), &st) != -1 && S_ISDIR(st.st_mode)) {
+			return basepath.c_str();
+		} else {
+			common->Printf("no '%s' directory in exe path %s, skipping\n", BASE_GAMEDIR, basepath.c_str());
+		}
+	}
+
+	if (basepath != Posix_Cwd()) {
+		basepath = Posix_Cwd();
+		testbase = basepath;
+		testbase += "/";
+		testbase += BASE_GAMEDIR;
+
+		if (stat(testbase.c_str(), &st) != -1 && S_ISDIR(st.st_mode)) {
+			return basepath.c_str();
+		} else {
+			common->Printf("no '%s' directory in cwd path %s, skipping\n", BASE_GAMEDIR, basepath.c_str());
+		}
+	}
+
+	common->Printf("WARNING: using hardcoded default base path\n");
+	return LINUX_DEFAULT_PATH;
 }
 
 /*
@@ -353,12 +321,13 @@ double Sys_ClockTicksPerSecond(void)
 	static double	ret;
 
 	int		fd, len, pos, end;
+	char	buf[ 4096 ];
 
 	if (init) {
 		return ret;
 	}
 
-	fd = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq", O_RDONLY);
+	fd = open("/proc/cpuinfo", O_RDONLY);
 
 	if (fd == -1) {
 		common->Printf("couldn't read /proc/cpuinfo\n");
@@ -368,16 +337,33 @@ double Sys_ClockTicksPerSecond(void)
 		return ret;
 	}
 
-	char	buf[ 128 ];
-	len = read(fd, buf, 128);
+	len = read(fd, buf, 4096);
 	close(fd);
+	pos = 0;
 
-	if (len > 0) {
-		ret = atof(buf);
-		common->Printf("/proc/cpuinfo CPU frequency: %g MHz", ret / 1000.0);
-		ret *= 1000;
-		init = true;
-		return ret;
+	while (pos < len) {
+		if (!idStr::Cmpn(buf + pos, "cpu MHz", 7)) {
+			pos = strchr(buf + pos, ':') - buf + 2;
+			end = strchr(buf + pos, '\n') - buf;
+
+			if (pos < len && end < len) {
+				buf[end] = '\0';
+				ret = atof(buf + pos);
+			} else {
+				common->Printf("failed parsing /proc/cpuinfo\n");
+				ret = MeasureClockTicks();
+				init = true;
+				common->Printf("measured CPU frequency: %g MHz\n", ret / 1000000.0);
+				return ret;
+			}
+
+			common->Printf("/proc/cpuinfo CPU frequency: %g MHz\n", ret);
+			ret *= 1000000;
+			init = true;
+			return ret;
+		}
+
+		pos = strchr(buf + pos, '\n') - buf + 1;
 	}
 
 	common->Printf("failed parsing /proc/cpuinfo\n");
@@ -618,7 +604,6 @@ void abrt_func(mcheck_status status)
 main
 ===============
 */
-/*
 int main(int argc, const char **argv)
 {
 #ifdef ID_MCHECK
@@ -641,383 +626,3 @@ int main(int argc, const char **argv)
 		common->Frame();
 	}
 }
-*/
-
-static
-void handleCmd(struct android_app* app, int32_t cmd) {
-    Sys_DebugPrintf("handleCmd start cmd(%i)", cmd);
-    idAndroidEngine* engine = static_cast<idAndroidEngine*>(app->userData);
-
-    switch (cmd) {
-        case APP_CMD_SAVE_STATE:
-            break;
-        case APP_CMD_INIT_WINDOW:
-            engine->start(app->window);
-            break;
-        case APP_CMD_TERM_WINDOW:
-            engine->stop();
-            break;
-        case APP_CMD_RESUME:
-        case APP_CMD_GAINED_FOCUS:
-            engine->resume();
-            break;
-        case APP_CMD_PAUSE:
-        case APP_CMD_LOST_FOCUS:
-            engine->pause();
-            break;
-    }
-
-    Sys_DebugPrintf("handleCmd end cmd(%i)", cmd);
-}
-
-static
-int32_t handleInput(struct android_app* app, AInputEvent* event) {
-    Sys_DebugPrintf("handleInput start");
-    idAndroidEngine* engine = static_cast<idAndroidEngine*>(app->userData);
-
-    switch(AInputEvent_getType(event)) {
-        case AINPUT_EVENT_TYPE_MOTION:
-            size_t count = AMotionEvent_getPointerCount(event);
-            for(int i = 0; i < count; i++) {
-                int32_t x = AMotionEvent_getX(event, i);
-                int32_t y = AMotionEvent_getY(event, i);
-                switch(AMotionEvent_getAction(event)) {
-                    case AMOTION_EVENT_ACTION_DOWN:
-                        Posix_QueEvent(SE_KEY, K_MOUSE1, true, 0, NULL);
-                        if(!Posix_AddMousePollEvent(M_ACTION1, true)) {
-                            return 0;
-                        }
-                        return 1;
-                    case AMOTION_EVENT_ACTION_UP:
-                        Posix_QueEvent(SE_KEY, K_MOUSE1, false, 0, NULL);
-                        if(!Posix_AddMousePollEvent(M_ACTION1, false)) {
-                            return 0;
-                        }
-                        return 1;
-                   case AMOTION_EVENT_ACTION_MOVE:
-                        int32_t lastX, lastY;
-                        engine->getLastMotionPos(&lastX, &lastY);
-                        int32_t dx = x - lastX;
-                        int32_t dy = y - lastY;
-                        Posix_QueEvent(SE_MOUSE, dx, dy, 0, NULL);
-                        // if we overflow here, we'll get a warning,
-                        // but the delta will be completely processed
-                        Posix_AddMousePollEvent(M_DELTAX, dx);
-                        if(!Posix_AddMousePollEvent(M_DELTAY, dy)) {
-                            return 0;
-                        }
-                        engine->setLastMotionPos(x, y);
-                        return 1;
-                }
-            }
-            break;
-    }
-
-    Sys_DebugPrintf("handleInput stop");
-    return 0;
-}
-
-/**
- * This is the main entry point of a native application that is using
- * android_native_app_glue.  It runs in its own thread, with its own
- * event loop for receiving input events and doing other things.
- */
-void android_main(struct android_app* state) {
-
-    // Make sure glue isn't stripped.
-    app_dummy();
-
-#ifdef ID_MCHECK
-    // must have -lmcheck linkage
-    mcheck(abrt_func);
-    Sys_Printf("memory consistency checking enabled\n");
-#endif
-
-    idAndroidEngine engine;
-    state->userData = &engine;
-    state->onAppCmd = handleCmd;
-    state->onInputEvent = handleInput;
-
-    Sys_Printf("main loop started");
-    while (!engine.isExiting()) {
-        int ident;
-        int events;
-        struct android_poll_source* source;
-
-        // If not animating, we will block forever waiting for events.
-        // If animating, we loop until all events are read, then continue
-        // to draw the next frame of animation.
-        while ((ident=ALooper_pollAll(engine.isRunning() ? 0 : -1, NULL, &events,
-                (void**)&source)) >= 0) {
-
-            // Process this event.
-            if (source != NULL) {
-                source->process(state, source);
-            }
-        }
-
-        engine.render();
-    }
-    Sys_Printf("main loop stopped");
-}
-
-/*
-===============
-main
-===============
-*/
-
-/*
-#include <jni.h>
-#include <errno.h>
-
-#include <EGL/egl.h>
-#include <GLES/gl.h>
-
-#include <androidinstance.h>
-
-#include <android/sensor.h>
-#include <android/log.h>
-#include <android_native_app_glue.h>
-
-static int lmx = 0, lmy = 0;
-static int mx = 0, my = 0;
-
-static ASensorManager* sensorManager;
-static const ASensor* accelerometerSensor;
-static ASensorEventQueue* sensorEventQueue;
-
-static int32_t engine_handle_input(struct android_app* app, AInputEvent* event)
-{
-   if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION)
-   {
-        size_t pointerCount = AMotionEvent_getPointerCount(event);
-        unsigned int flags = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
-        if (flags == AMOTION_EVENT_ACTION_MOVE) {
-            for (size_t i = 0; i < pointerCount; ++i)
-            {
-                Sys_Printf("Received motion event from pointer %zu: (%.2f, %.2f)", i, AMotionEvent_getX(event, i), AMotionEvent_getY(event, i));
-                mx = (int)AMotionEvent_getX(event, i);
-                my = (int)AMotionEvent_getY(event, i);
-                int diffx = lmx - mx;
-                int diffy = lmy - my;
-
-                Posix_QueEvent(SE_MOUSE, diffx, diffy, 0, NULL);
-
-                // if we overflow here, we'll get a warning, but the delta will be completely processed anyway
-                Posix_AddMousePollEvent(M_DELTAX, diffx);
-
-                if (!Posix_AddMousePollEvent(M_DELTAY, diffy))
-                    return;
-                lmx = mx;
-                lmy = my;
-            }
-        } else if (flags == AMOTION_EVENT_ACTION_DOWN || flags == AMOTION_EVENT_ACTION_POINTER_DOWN) {
-            Sys_Printf("Call mouse release event...");
-            // mouse release equivalent
-            int b = 0;
-            Posix_QueEvent(SE_KEY, K_MOUSE1 + b, false, 0, NULL);
-
-            if (!Posix_AddMousePollEvent(M_ACTION1 + b, false))
-                return;
-        } else if (flags == AMOTION_EVENT_ACTION_UP || flags == AMOTION_EVENT_ACTION_POINTER_UP) {
-            Sys_Printf("Call mouse press event...");
-            // mouse press equivalent
-            int b = 0;
-            Posix_QueEvent(SE_KEY, K_MOUSE1 + b, true, 0, NULL);
-
-            if (!Posix_AddMousePollEvent(M_ACTION1 + b, true))
-                return;
-        } else {
-            return 0;
-        }
-        return 1;
-   }
-   else if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY)
-   {
-      Sys_Printf("Received key event: %d", AKeyEvent_getKeyCode(event));
-      return 1;
-   }
- 
-   return 0;
-}
-
-
-static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
-    //struct engine* engine = (struct engine*)app->userData;
-    //Sys_Printf("engine_handle_cmd %i\n", cmd);
-    switch (cmd) {
-        case APP_CMD_SAVE_STATE:
-            // The system has asked us to save our current state.  Do so.
-            //engine->app->savedState = malloc(sizeof(struct saved_state));
-            //*((struct saved_state*)engine->app->savedState) = engine->state;
-            //engine->app->savedStateSize = sizeof(struct saved_state);
-            break;
-        case APP_CMD_INIT_WINDOW:
-            // The window is being shown, get it ready.
-            if (app->window != NULL) {
-                //engine_init_display(engine);
-                //engine_draw_frame(engine);
-
-                Posix_EarlyInit();
-
-                // +devmap testmaps/test_box
-                //common->Init(0, NULL, NULL);
-                // FOR testing only... load test box map!
-                //common->Init(0, NULL, "+devmap testmaps/test_box +com_showFPS 1");
-                common->Init(0, NULL, "+devmap game/mp/d3dm1 +com_showFPS 1");
-                //common->Init(0, NULL, "+com_showFPS 1");
-
-                Posix_LateInit();
-
-                AndroidApp::getInstance().windowCreated = true;
-            }
-            break;
-        case APP_CMD_TERM_WINDOW:
-            Sys_Printf("APP_CMD_TERM_WINDOW...");
-
-            Sys_Shutdown();
-            Sys_Quit();
-            break;
-        case APP_CMD_GAINED_FOCUS:
-            // When our app gains focus, we start monitoring the accelerometer.
-            if (accelerometerSensor != NULL) {
-                ASensorEventQueue_enableSensor(sensorEventQueue,
-                        accelerometerSensor);
-                // We'd like to get 60 events per second (in us).
-                ASensorEventQueue_setEventRate(sensorEventQueue,
-                        accelerometerSensor, (1000L/60)*1000);
-            }
-            break;
-        case APP_CMD_LOST_FOCUS:
-            Sys_Printf("APP_CMD_LOST_FOCUS...");
-            // When our app loses focus, we stop monitoring the accelerometer.
-            // This is to avoid consuming battery while not being used.
-            if (accelerometerSensor != NULL) {
-                ASensorEventQueue_disableSensor(sensorEventQueue,
-                        accelerometerSensor);
-            }
-            //if (common) {
-            //    common->Quit();
-            //}
-            //Sys_Shutdown();
-            break;
-    }
-}
-
-void android_main(struct android_app* state) {
-    // Make sure glue isn't stripped.
-    app_dummy();
-
-#ifdef ID_MCHECK
-    // must have -lmcheck linkage
-    mcheck(abrt_func);
-    Sys_Printf("memory consistency checking enabled\n");
-#endif
-
-    state->userData = &AndroidApp::getInstance();
-    state->onAppCmd = engine_handle_cmd;
-    state->onInputEvent = engine_handle_input;
-
-    AndroidApp::getInstance().app = state;
-    AndroidApp::getInstance().windowCreated = false;
-
-    // Prepare to monitor accelerometer
-    sensorManager = ASensorManager_getInstance();
-    accelerometerSensor = ASensorManager_getDefaultSensor(sensorManager,
-            ASENSOR_TYPE_ACCELEROMETER);
-    sensorEventQueue = ASensorManager_createEventQueue(sensorManager,
-            state->looper, LOOPER_ID_USER, NULL, NULL);
-
-//     if (state->savedState != NULL) {
-//         // We are starting with a previous saved state; restore from it.
-//         android_engine.state = *(struct saved_state*)state->savedState;
-//     }
-
-    // loop waiting for stuff to do.
-
-    while (1) {
-        // Read all pending events.
-        int ident;
-        int events;
-        struct android_poll_source* source;
-
-        // If not animating, we will block forever waiting for events.
-        // If animating, we loop until all events are read, then continue
-        // to draw the next frame of animation.
-        // android_engine.animating ? 0 : -1
-        while ((ident=ALooper_pollAll(0, NULL, &events,
-                (void**)&source)) >= 0) {
-
-            // Process this event.
-            if (source != NULL) {
-                source->process(state, source);
-            }
-
-            // If a sensor has data, process it now.
-            if (ident == LOOPER_ID_USER) {
-                if (accelerometerSensor != NULL) {
-                    ASensorEvent event;
-                    while (ASensorEventQueue_getEvents(sensorEventQueue,
-                            &event, 1) > 0) {
-                        //Sys_Printf("accelerometer: x=%f y=%f z=%f",
-                        //        event.acceleration.x, event.acceleration.y,
-                        //        event.acceleration.z);
-                        // TODO: move it to another function...
-
-                        if (event.acceleration.x < -2) {
-                            // stopping 115 - moving back...
-                            Posix_QueEvent(SE_KEY, 115, false, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(115, false))
-                                return;
-
-                            // 119 moving forward...
-                            Posix_QueEvent(SE_KEY, 119, true, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(119, true))
-                                return;
-                        } else if (event.acceleration.x < 2) {
-                            // stopping 119 - moving forward...
-                            Posix_QueEvent(SE_KEY, 119, false, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(119, false))
-                                return;
-
-                            // 115 - moving back
-                            Posix_QueEvent(SE_KEY, 115, true, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(115, true))
-                                return;
-                        } else {
-                            // stopping 119 - moving forward...
-                            Posix_QueEvent(SE_KEY, 119, false, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(119, false))
-                                return;
-
-                            // stopping 115 - moving back...
-                            Posix_QueEvent(SE_KEY, 115, false, 0, NULL);
-
-                            if (!Posix_AddKeyboardPollEvent(115, false))
-                                return;
-                        }
-
-                    }
-                }
-            }
-            // Check if we are exiting.
-            if (state->destroyRequested != 0) {
-
-                Sys_Shutdown();
-                Sys_Quit();
-                return;
-            }
-        }
-
-        if (AndroidApp::getInstance().windowCreated) {
-            common->Frame();
-        }
-    }
-}
-*/

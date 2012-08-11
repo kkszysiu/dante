@@ -34,7 +34,6 @@ extern glconfig_t glConfig;
 
 //#define ID_ENABLE_DGA
 
-/*
 #if defined( ID_ENABLE_DGA )
 #include <X11/extensions/xf86dga.h>
 #endif
@@ -52,6 +51,5 @@ void Sys_XUninstallGrabs();
 #define KEY_MASK (KeyPressMask | KeyReleaseMask)
 #define MOUSE_MASK (ButtonPressMask | ButtonReleaseMask | PointerMotionMask | ButtonMotionMask )
 #define X_MASK (KEY_MASK | MOUSE_MASK | VisibilityChangeMask | StructureNotifyMask )
-*/
 
 #endif
