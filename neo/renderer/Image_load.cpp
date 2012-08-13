@@ -38,6 +38,10 @@ If you have questions concerning this license or the applicable additional terms
 #define GL_RGB5	GL_RGBA
 #endif
 
+#if defined(GL_ES_VERSION_2_0) && defined(__ANDROID__)
+#include "etc1.h"
+#endif
+
 /*
 PROBLEM: compressed textures may break the zero clamp rule!
 */
@@ -238,6 +242,7 @@ This may need to scan six cube map images
 GLenum idImage::SelectInternalFormat(const byte **dataPtrs, int numDataPtrs, int width, int height,
                                      textureDepth_t minimumDepth) const
 {
+	common->Printf("SelectInternalFormat");
 #if !defined(GL_ES_VERSION_2_0)
 	int		i, c;
 	const byte	*scan;
@@ -569,6 +574,7 @@ void idImage::GenerateImage(const byte *pic, int width, int height,
                             textureFilter_t filterParm, bool allowDownSizeParm,
                             textureRepeat_t repeatParm, textureDepth_t depthParm)
 {
+	common->Printf("GenerateImage");
 	bool	preserveBorder;
 	byte		*scaledBuffer;
 	int			scaled_width, scaled_height;
@@ -1072,7 +1078,11 @@ void idImage::ImageProgramStringToCompressedFileName(const char *imageProg, char
 	const char	*s;
 	char	*f;
 
+#if !defined(GL_ES_VERSION_2_0)
 	strcpy(fileName, "dds/");
+#else
+	strcpy(fileName, "pkm/");
+#endif
 	f = fileName + strlen(fileName);
 
 	int depth = 0;
@@ -1101,7 +1111,11 @@ void idImage::ImageProgramStringToCompressedFileName(const char *imageProg, char
 	}
 
 	*f++ = 0;
+#if !defined(GL_ES_VERSION_2_0)
 	strcat(fileName, ".dds");
+#else
+	strcat(fileName, ".pkm");
+#endif
 }
 
 /*
@@ -1132,6 +1146,7 @@ versions of everything to speed future load times.
 */
 void idImage::WritePrecompressedImage()
 {
+	common->Printf("WritePrecompressedImage");
 #if !defined(GL_ES_VERSION_2_0)
 
 	// Always write the precompressed image if we're making a build
@@ -1532,7 +1547,107 @@ bool idImage::CheckPrecompressedImage(bool fullLoad)
 
 	return true;
 #else
-	return false;
+	if (!glConfig.isInitialized || !glConfig.ETC1CompressionAvailable) {
+		return false;
+	}
+
+	if (depth == TD_BUMP) {
+		return false;
+	}
+
+	char filename[MAX_IMAGE_NAME];
+	ImageProgramStringToCompressedFileName(imgName, filename);
+
+	// get the file timestamp
+	ID_TIME_T precompTimestamp;
+	fileSystem->ReadFile(filename, NULL, &precompTimestamp);
+
+	common->Printf("CheckPrecompressedImage: %s / %s\n", filename, imgName.c_str());
+
+	if (precompTimestamp == FILE_NOT_FOUND_TIMESTAMP) {
+		return false;
+	}
+
+	if (!generatorFunction && timestamp != FILE_NOT_FOUND_TIMESTAMP) {
+		if (precompTimestamp < timestamp) {
+			// The image has changed after being precompressed
+			return false;
+		}
+	}
+
+	timestamp = precompTimestamp;
+
+	// open it and just read the header
+	idFile *f;
+
+	f = fileSystem->OpenFileRead(filename);
+	common->Printf(" fileSystem->OpenFileRead(filename): %s\n", filename);
+
+	if (!f) {
+		return false;
+	}
+
+	int	len = f->Length();
+
+	if (len < ETC_PKM_HEADER_SIZE) {
+		fileSystem->CloseFile(f);
+		return false;
+	}
+
+	etc1_byte* _header = 0;
+	_header = new etc1_byte[ETC_PKM_HEADER_SIZE];
+	f->Read(_header, ETC_PKM_HEADER_SIZE);
+	if (!etc1_pkm_is_valid(_header)) {
+		common->Printf("PKM seems to be invalid");
+		return false;
+	}
+
+	byte *data = (byte *)R_StaticAlloc(len);
+
+	f->Read(data, len);
+
+	fileSystem->CloseFile(f);
+
+	// TODO: move it to another funtcion
+	// generate the texture number
+	glGenTextures(1, &texnum);
+
+	internalFormat = GL_ETC1_RGB8_OES;
+
+	int width = etc1_pkm_get_width(_header);
+	int height = etc1_pkm_get_height(_header);
+	int encodedSize = etc1_get_encoded_data_size(width, height);
+	int size = 8 * ((width + 3) >> 2) * ((height + 3) >> 2);
+	common->Printf("CheckPrecompressedImage width: %i, height: %i, encodedSize: %i, size: %i", width, height, encodedSize, size);
+
+	etc1_byte* pOut = new etc1_byte[size];
+	int res = etc1_decode_image((const etc1_byte*)data, pOut, width, height, 3, 0);
+
+	common->Printf("CheckPrecompressedImage loading res: %i", res);
+	glCompressedTexImage2D(GL_TEXTURE_2D, 0/*level*/, 
+				ETC1_RGB8_OES/*internal format*/,  
+				width, height,        
+				0/*border*/,   
+				encodedSize/*imagesize*/, 
+				pOut);
+
+	delete [] pOut;
+	/*
+        if (etc1_decode_image(
+                (const etc1_byte*)data,
+                (etc1_byte*)surface->data,
+                width, height, 3, surface->stride*3) != 0) {
+            ogles_error(c, GL_INVALID_OPERATION);
+        }
+    */
+	// upload all the levels
+	//UploadPrecompressedImage(data, len);
+
+	R_StaticFree(data);
+
+	common->Printf("CheckPrecompressedImage end...");
+
+	return true;
 #endif
 }
 
@@ -1660,6 +1775,7 @@ void idImage::UploadPrecompressedImage(byte *data, int len)
 		} else {
 			if (FormatIsDXT(internalFormat)) {
 				qglCompressedTexImage2DARB(GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, size, imagedata);
+				//glCompressedTexImage2D (GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *data);
 			} else {
 				glTexImage2D(GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, externalFormat, GL_UNSIGNED_BYTE, imagedata);
 			}
@@ -1679,6 +1795,12 @@ void idImage::UploadPrecompressedImage(byte *data, int len)
 	}
 
 	SetImageFilterAndRepeat();
+#elif defined(GL_ES_VERSION_2_0) && defined(__ANDROID__)
+	// generate the texture number
+	glGenTextures(1, &texnum);
+
+	internalFormat = GL_ETC1_RGB8_OES;
+	
 #endif
 }
 
@@ -1692,6 +1814,7 @@ On exit, the idImage will have a valid OpenGL texture number that can be bound
 */
 void	idImage::ActuallyLoadImage(bool checkForPrecompressed, bool fromBackEnd)
 {
+	common->Printf("ActuallyLoadImage, checkForPrecompressed: %s, fromBackEnd: %s, imgName: %s\n\n\n", checkForPrecompressed ? "True" : "False", fromBackEnd ? "True" : "False", imgName.c_str());
 	int		width, height;
 	byte	*pic;
 
@@ -1701,6 +1824,7 @@ void	idImage::ActuallyLoadImage(bool checkForPrecompressed, bool fromBackEnd)
 		return;
 	}
 
+	common->Printf("ActuallyLoadImage, isPartialImage: %s",  isPartialImage ? "True" : "False");
 	// if we are a partial image, we are only going to load from a compressed file
 	if (isPartialImage) {
 		if (CheckPrecompressedImage(false)) {
@@ -1716,6 +1840,7 @@ void	idImage::ActuallyLoadImage(bool checkForPrecompressed, bool fromBackEnd)
 	// load the image from disk
 	//
 	if (cubeFiles != CF_2D) {
+		common->Printf("ActuallyLoadImage, (cubeFiles != CF_2D)");
 		byte	*pics[6];
 
 		// we don't check for pre-compressed cube images currently
@@ -1736,6 +1861,7 @@ void	idImage::ActuallyLoadImage(bool checkForPrecompressed, bool fromBackEnd)
 			}
 		}
 	} else {
+		common->Printf("ActuallyLoadImage, (cubeFiles == CF_2D)");
 		// see if we have a pre-generated image file that is
 		// already image processed and compressed
 		if (checkForPrecompressed && globalImages->image_usePrecompressedTextures.GetBool()) {
@@ -2114,6 +2240,7 @@ if rows = cols * 6, assume it is a cube map animation
 */
 void idImage::UploadScratch(const byte *data, int cols, int rows)
 {
+	common->Printf("UploadScratch");
 	int			i;
 
 	// if rows = cols * 6, assume it is a cube map animation

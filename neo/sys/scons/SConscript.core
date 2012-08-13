@@ -1,6 +1,7 @@
 # -*- mode: python -*-
 # DOOM build script
 # TTimo <ttimo@idsoftware.com>
+# Krzysztof Klinikowski <kkszysiu@gmail.com>
 # http://scons.sourceforge.net
 
 import sys, os
@@ -201,16 +202,18 @@ sys_string = ' \
 	posix/posix_main.cpp \
 	posix/posix_signal.cpp \
 	posix/posix_threads.cpp \
-	linux/stack.cpp \
-	linux/main.cpp \
 	stub/util_stub.cpp'
 
-# android app instance
-if g_os == "Android":
-    sys_string += ' \
-        android/androidinstance.cpp'
+if g_os == "Linux":
+	sys_string += ' \
+		linux/stack.cpp \
+		linux/main.cpp'
+elif g_os == "Android":
+	sys_string += ' \
+		android/stack.cpp \
+		android/main.cpp'
 
-if ( local_dedicated == 0 ):
+if ( g_os == "Linux" and local_dedicated == 0 ):
 	sys_string += ' \
 		posix/posix_input.cpp \
 		linux/input.cpp \
@@ -219,8 +222,18 @@ if ( local_dedicated == 0 ):
 		sys_string += ' linux/gles2.cpp'
 	else:
 		sys_string += ' linux/glimp.cpp'
+elif ( g_os == "Android" and local_dedicated == 0 ):
+	sys_string += ' \
+		posix/posix_input.cpp \
+		android/input.cpp \
+		android/gl_extensions.cpp \
+		android/gles2.cpp'
 else:
-	sys_string += ' linux/dedicated.cpp'
+	if g_os == "Linux":
+		sys_string += ' linux/dedicated.cpp'
+	elif g_os == "Android":
+		sys_string += ' android/dedicated.cpp'
+
 
 sys_list = scons_utils.BuildList( 'sys', sys_string )
 
@@ -238,8 +251,10 @@ for i in range( len( core_list ) ):
 
 local_env = g_env.Clone()
 
-if g_os == "Android":
-    local_env.Append( CPPPATH = [ '../../sys/android/' ] )
+#if g_os == "Android":
+#	local_env.Append( CPPPATH = [ '../../sys/android/' ] )
+#elif g_os == "Linux":
+#	local_env.Append( CPPPATH = [ '../../sys/linux/' ] )
 
 if ( local_dedicated == 1 ):
 	local_env.Append( CPPDEFINES = [ 'ID_DEDICATED' ] )
@@ -262,56 +277,61 @@ if ( local_opengl == 1 ):
 
 sound_env = local_env.Clone()
 if g_os == "Linux":
-    sound_env.Append( CPPPATH = '/usr/local/lib/oss/include' )
-    # store a local copy of the include headers as well for holy build
-    sound_env.Append( CPPPATH = '../linux/oss/include' )
-sound_list = [ '../linux/sound.cpp' ]
-if ( ALSA != '0' ):
-	sound_list.append( '../../sys/linux/sound_alsa.cpp' )
-else:
-	sound_env.Append( CPPDEFINES = 'NO_ALSA' )
+	sound_env.Append( CPPPATH = '/usr/local/lib/oss/include' )
+	# store a local copy of the include headers as well for holy build
+	sound_env.Append( CPPPATH = '../linux/oss/include' )
+	sound_list = [ '../linux/sound.cpp' ]
+	if ( ALSA != '0' ):
+		sound_list.append( '../../sys/linux/sound_alsa.cpp' )
+	else:
+		sound_env.Append( CPPDEFINES = 'NO_ALSA' )
+elif g_os == "Android":
+	sound_list = [ '../android/sound.cpp' ]
 
 if g_os == "Android":
-    sound_lib = sound_env.StaticLibrary( 'android_sound', sound_list )
+	sound_lib = sound_env.StaticLibrary( 'android_sound', sound_list )
 else:
-    sound_lib = sound_env.StaticLibrary( 'sound', sound_list )
+	sound_lib = sound_env.StaticLibrary( 'sound', sound_list )
+
+if g_os == "Android":
+	# for android only...
+	jpeg_string = 'jaricom.c jcapimin.c jcapistd.c jcarith.c jccoefct.c jccolor.c jcdctmgr.c jchuff.c jcinit.c jcmainct.c jcmarker.c jcmaster.c jcomapi.c jcparam.c jcprepct.c jcsample.c jctrans.c jdapimin.c jdapistd.c jdarith.c jdatadst.c jdatasrc.c jdcoefct.c jdcolor.c jddctmgr.c jdhuff.c jdinput.c jdmainct.c jdmarker.c jdmaster.c jdmerge.c jdpostct.c jdsample.c jdtrans.c jerror.c jfdctflt.c jfdctfst.c jfdctint.c jidctflt.c jidctfst.c jidctint.c jquant1.c jquant2.c jutils.c jmemmgr.c jmemname.c'
+	jpeg_list = scons_utils.BuildList( '../../android/libjpeg/jpeg-8c/', jpeg_string )
+
+	jpeg_env = local_env.Clone()
+	jpeg_lib = jpeg_env.StaticLibrary( 'jpeg', jpeg_list )
+
+	local_env.Append( CPPPATH = [ '../../android/libjpeg/include/' ] )
+
+	native_activity_list = [ '../../../../../../android/android-ndk-r7c/sources/android/native_app_glue/android_native_app_glue.c' ]
+	local_env.Append( CPPPATH = '../../../../../../android/android-ndk-r7c/sources/android/native_app_glue/' )
+
+	native_activity_env = g_env.Clone()
+	native_activity_env.Append( LIBS = [ 'log', 'android' ] )
+	native_activity_env['CPPFLAGS'] += [ "-fvisibility=default" ]
+	native_activity_lib = native_activity_env.StaticLibrary( 'android_native_app_glue', native_activity_list )
+
+	local_env.Append( CPPPATH = [ '../../android/libetc1/', 'android/libetc1/' ] )
+
+	etc1_list = [ '../../android/libetc1/etc1.cpp' ]
+	etc1_env = local_env.Clone()
+	etc1_lib = etc1_env.StaticLibrary( 'etc1', etc1_list )
 
 
 if g_os == "Android":
-    # we dont need warnings about PSABI issues 
-    # the mangling of 'va_list' has changed in GCC 4.4
-
-    # for android only...
-    jpeg_string = 'jaricom.c jcapimin.c jcapistd.c jcarith.c jccoefct.c jccolor.c jcdctmgr.c jchuff.c jcinit.c jcmainct.c jcmarker.c jcmaster.c jcomapi.c jcparam.c jcprepct.c jcsample.c jctrans.c jdapimin.c jdapistd.c jdarith.c jdatadst.c jdatasrc.c jdcoefct.c jdcolor.c jddctmgr.c jdhuff.c jdinput.c jdmainct.c jdmarker.c jdmaster.c jdmerge.c jdpostct.c jdsample.c jdtrans.c jerror.c jfdctflt.c jfdctfst.c jfdctint.c jidctflt.c jidctfst.c jidctint.c jquant1.c jquant2.c jutils.c jmemmgr.c jmemname.c'
-    jpeg_list = scons_utils.BuildList( '../../android/libjpeg/jpeg-8c/', jpeg_string )
-
-    jpeg_env = local_env.Clone()
-    jpeg_lib = jpeg_env.StaticLibrary( 'jpeg', jpeg_list )
-
-    local_env.Append( CPPPATH = [ '../../android/libjpeg/include/' ] )
-
-    native_activity_list = [ '../../../../../../android/android-ndk-r7c/sources/android/native_app_glue/android_native_app_glue.c' ]
-    local_env.Append( CPPPATH = '../../../../../../android/android-ndk-r7c/sources/android/native_app_glue/' )
-
-    native_activity_env = g_env.Clone()
-    native_activity_env.Append( LIBS = [ 'log', 'android' ] )
-    native_activity_env['CPPFLAGS'] += [ "-fvisibility=default" ]
-    native_activity_lib = native_activity_env.StaticLibrary( 'android_native_app_glue', native_activity_list )
-
-if g_os == "Android":
-    local_env.Append( LIBS = [ 'dl', 'log', 'android' ] )
+	local_env.Append( LIBS = [ 'dl', 'log', 'android' ] )
 else:
-    local_env.Append( LIBS = [ 'pthread', 'dl', 'vorbisfile', 'jpeg' ] )
+	local_env.Append( LIBS = [ 'pthread', 'dl', 'vorbisfile', 'jpeg' ] )
 
 if ( local_dedicated == 0 ):
-    if g_os == "Linux":
-        local_env.Append( LIBS = [ 'X11' ] )
-        local_env.Append( LIBPATH = [ '/usr/X11R6/lib' ] )
-        local_env.Append( LIBS = [ 'openal' ] )
-    if ( local_opengl == 0 ):
-            local_env.Append( LIBS = [ 'GLESv2', 'EGL' ] )
-    else:
-            local_env.Append( LIBS = [ 'GL' ] )
+	if g_os == "Linux":
+		local_env.Append( LIBS = [ 'X11' ] )
+		local_env.Append( LIBPATH = [ '/usr/X11R6/lib' ] )
+		local_env.Append( LIBS = [ 'openal' ] )
+	if ( local_opengl == 0 ):
+		local_env.Append( LIBS = [ 'GLESv2', 'EGL' ] )
+	else:
+		local_env.Append( LIBS = [ 'GL' ] )
 
 source_list = core_list
 source_list += idlib_objects
@@ -319,14 +339,15 @@ source_list += sound_lib
 
 # for android only
 if g_os == "Android":
-    source_list += jpeg_lib
-    source_list += native_activity_lib
+	source_list += jpeg_lib
+	source_list += native_activity_lib
+	source_list += etc1_lib
 else:
-    source_list += [ '../../openal/stubs.cpp' ]
+	source_list += [ '../../openal/stubs.cpp' ]
 
 if g_os == "Android":
-    local_env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME']=1
-    local_env['CPPFLAGS'] += [ "-shared" ]
+	local_env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME']=1
+	local_env['CPPFLAGS'] += [ "-shared" ]
 
 source_list += g_env_noopt.StaticObject( '../../tools/compilers/dmap/optimize_gcc.cpp' )
 
@@ -334,8 +355,8 @@ if ( local_gamedll == 0 ):
 	source_list += game_objects
 
 if g_os == "Android":
-    d3wm = local_env.SharedLibrary( target = 'doom', source = source_list )
+	d3wm = local_env.SharedLibrary( target = 'doom', source = source_list )
 else:
-    d3wm = local_env.Program( target = 'doom', source = source_list )
+	d3wm = local_env.Program( target = 'doom', source = source_list )
 
 Return( 'd3wm' )

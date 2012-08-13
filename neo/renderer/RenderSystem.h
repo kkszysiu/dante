@@ -74,6 +74,9 @@ typedef struct glconfig_s {
 	bool				textureNonPowerOfTwoAvailable;
 	bool				depthBoundsTestAvailable;
 	bool				GLSLAvailable;
+#if defined(GL_ES_VERSION_2_0)
+	bool				ETC1CompressionAvailable;
+#endif
 
 	int					vidWidth, vidHeight;	// passed to R_BeginFrame
 

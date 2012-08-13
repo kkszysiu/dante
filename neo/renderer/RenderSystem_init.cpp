@@ -274,6 +274,10 @@ static void R_CheckPortableExtensions(void)
 #endif
 	}
 
+#if defined(GL_ES_VERSION_2_0)
+	glConfig.ETC1CompressionAvailable = R_CheckExtension("GL_OES_compressed_ETC1_RGB8_texture");
+#endif
+
 	// GL_ARB_texture_env_combine
 	glConfig.textureEnvCombineAvailable = R_CheckExtension("GL_ARB_texture_env_combine");
 
